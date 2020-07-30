@@ -1,42 +1,36 @@
 <?php
-
 namespace Concrete\Core\Block\BlockType;
 
 use Concrete\Core\Entity\Block\BlockType\BlockType as BlockTypeEntity;
-use Concrete\Core\Legacy\DatabaseItemList;
 use Concrete\Core\Support\Facade\Application;
+use Core;
+use Loader;
+use Package;
+
+use Concrete\Core\Legacy\DatabaseItemList;
 
 class BlockTypeList extends DatabaseItemList
 {
-    protected $autoSortColumns = ['btHandle', 'btID', 'btDisplayOrder'];
-
+    protected $autoSortColumns = array('btHandle', 'btID', 'btDisplayOrder');
     protected $includeInternalBlockTypes = false;
 
     public function __construct()
     {
-        $this->setQuery('select btID from BlockTypes');
+        $this->setQuery("select btID from BlockTypes");
         $this->sortByMultiple('btDisplayOrder asc', 'btName asc', 'btID asc');
     }
-
     public function includeInternalBlockTypes()
     {
         $this->includeInternalBlockTypes = true;
     }
 
-    /**
-     * @param int $itemsToGet
-     * @param int $offset
-     *
-     * @return \Concrete\Core\Entity\Block\BlockType\BlockType[]
-     */
     public function get($itemsToGet = 0, $offset = 0)
     {
         if (!$this->includeInternalBlockTypes) {
             $this->filter('btIsInternal', false);
         }
-
-        $r = parent::get($itemsToGet, (int) $offset);
-        $blocktypes = [];
+        $r = parent::get($itemsToGet, intval($offset));
+        $blocktypes = array();
         foreach ($r as $row) {
             $bt = BlockType::getByID($row['btID']);
             if (is_object($bt)) {
@@ -77,15 +71,13 @@ class BlockTypeList extends DatabaseItemList
      */
     public static function getAvailableList()
     {
-        $blocktypes = [];
+        $blocktypes = array();
         $dir = DIR_FILES_BLOCK_TYPES;
+        $db = Loader::db();
 
-        $app = Application::getFacadeApplication();
-        $db = $app->make('database/connection');
+        $btHandles = $db->GetCol("select btHandle from BlockTypes order by btDisplayOrder asc, btName asc, btID asc");
 
-        $btHandles = $db->GetCol('select btHandle from BlockTypes order by btDisplayOrder asc, btName asc, btID asc');
-
-        $aDir = [];
+        $aDir = array();
         if (is_dir($dir)) {
             $handle = opendir($dir);
             while (($file = readdir($handle)) !== false) {
@@ -131,21 +123,20 @@ class BlockTypeList extends DatabaseItemList
 
     public static function resetBlockTypeDisplayOrder($column = 'btID')
     {
-        $app = Application::getFacadeApplication();
-        $db = $app->make('database/connection');
-        $cache = $app->make('cache');
-
-        $stmt = $db->prepare('UPDATE BlockTypes SET btDisplayOrder = ? WHERE btID = ?');
+        $db = Loader::db();
+        /** @var \Concrete\Core\Cache\Cache $cache */
+        $cache = Core::make('cache');
+        $stmt = $db->Prepare("UPDATE BlockTypes SET btDisplayOrder = ? WHERE btID = ?");
         $btDisplayOrder = 1;
-        $blockTypes = $db->fetchAll("SELECT btID, btHandle, btIsInternal FROM BlockTypes ORDER BY {$column} ASC");
+        $blockTypes = $db->GetArray("SELECT btID, btHandle, btIsInternal FROM BlockTypes ORDER BY {$column} ASC");
         foreach ($blockTypes as $bt) {
             if ($bt['btIsInternal']) {
-                $stmt->execute([0, $bt['btID']]);
+                $db->Execute($stmt, array(0, $bt['btID']));
             } else {
-                $stmt->execute([$btDisplayOrder, $bt['btID']]);
-                $btDisplayOrder++;
+                $db->Execute($stmt, array($btDisplayOrder, $bt['btID']));
+                ++$btDisplayOrder;
             }
-            $cache->delete('blockTypeByID/' . $bt['btID']);
+            $cache->delete('blockTypeByID/' .$bt['btID']);
             $cache->delete('blockTypeByHandle/' . $bt['btHandle']);
         }
         $cache->delete('blockTypeList');
